@@ -334,10 +334,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # No Drive config → send files directly to the user.
             for t in tracks:
                 if os.path.isfile(t["filepath"]):
-                    await update.message.reply_audio(
-                        audio=open(t["filepath"], "rb"),
-                        title=t["title"],
-                    )
+                    with open(t["filepath"], "rb") as audio_file:
+                        await update.message.reply_audio(
+                            audio=audio_file,
+                            title=t["title"],
+                        )
             await _edit_progress(
                 status_msg, "✅ Done! Files sent directly (Google Drive not configured)."
             )
