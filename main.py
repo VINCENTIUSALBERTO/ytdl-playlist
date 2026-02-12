@@ -118,7 +118,7 @@ def sanitize_filename(name: str) -> str:
 def _ydl_opts(output_dir: str) -> dict:
     """Return yt-dlp options for best-audio → MP3 at 192 kbps."""
     opts: dict = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "postprocessors": [
             {
@@ -133,6 +133,9 @@ def _ydl_opts(output_dir: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": False,
+        "retries": 3,
+        "fragment_retries": 3,
+        "ignoreerrors": True,
     }
     if os.path.isfile(COOKIES_FILE):
         opts["cookiefile"] = COOKIES_FILE
@@ -234,11 +237,16 @@ async def _edit_progress(message, text: str) -> None:
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /start command."""
     await update.message.reply_text(
-        "👋 <b>Welcome!</b>\n\n"
-        "Send me a YouTube link (video, short, or playlist) and I will:\n"
-        "1️⃣  Download the audio as MP3\n"
-        "2️⃣  Upload it to Google Drive\n\n"
-        "Only YouTube links are accepted.",
+        "🎵 <b>Welcome to YouTube-to-Drive Bot!</b>\n\n"
+        "I can download audio from YouTube and upload it to Google Drive.\n\n"
+        "<b>How it works:</b>\n"
+        "1️⃣  Send me a YouTube link (video, short, or playlist)\n"
+        "2️⃣  I'll convert the audio to high-quality MP3 (192 kbps)\n"
+        "3️⃣  Upload it straight to your Google Drive\n\n"
+        "📋 <b>Commands:</b>\n"
+        "/help  — Detailed usage guide &amp; supported formats\n"
+        "/menu  — Quick-reference command list\n\n"
+        "💡 <i>Just paste a YouTube URL to get started!</i>",
         parse_mode="HTML",
     )
 
@@ -246,15 +254,38 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /help command."""
     await update.message.reply_text(
-        "📖 <b>How to use this bot</b>\n\n"
-        "• Send a YouTube <b>video</b> link → downloads as a single MP3.\n"
-        "• Send a YouTube <b>playlist</b> link → downloads all tracks and "
-        "organises them in a Drive sub-folder named after the playlist.\n\n"
-        "<b>Supported URL formats:</b>\n"
-        "  - https://youtube.com/watch?v=...\n"
-        "  - https://youtu.be/...\n"
-        "  - https://youtube.com/shorts/...\n"
-        "  - https://youtube.com/playlist?list=...\n",
+        "📖 <b>How to Use This Bot</b>\n\n"
+        "🎬 <b>Single Video / Short</b>\n"
+        "Send any YouTube video or short link and I'll download it as a "
+        "single MP3 file.\n\n"
+        "📂 <b>Playlist</b>\n"
+        "Send a YouTube playlist link and I'll download <b>all</b> tracks. "
+        "They'll be organised in a Google Drive sub-folder named after the "
+        "playlist.\n\n"
+        "✅ <b>Supported URL formats:</b>\n"
+        "  • <code>https://youtube.com/watch?v=...</code>\n"
+        "  • <code>https://youtu.be/...</code>\n"
+        "  • <code>https://youtube.com/shorts/...</code>\n"
+        "  • <code>https://youtube.com/playlist?list=...</code>\n\n"
+        "⚙️ <b>Features:</b>\n"
+        "  • 🎧 High-quality MP3 (192 kbps)\n"
+        "  • 🖼 Embedded thumbnail &amp; metadata\n"
+        "  • 🔄 Duplicate detection (won't re-upload)\n"
+        "  • 📊 Real-time progress updates\n\n"
+        "💡 <i>Tip: If you get a sign-in error, make sure a valid "
+        "cookies.txt is configured on the server.</i>",
+        parse_mode="HTML",
+    )
+
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /menu command."""
+    await update.message.reply_text(
+        "📋 <b>Bot Commands</b>\n\n"
+        "/start  — Welcome message &amp; introduction\n"
+        "/help   — Detailed usage guide\n"
+        "/menu   — This command list\n\n"
+        "Or simply <b>paste a YouTube URL</b> to download! 🎶",
         parse_mode="HTML",
     )
 
@@ -268,16 +299,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ------------------------------------------------------------------
     if not is_youtube_url(text):
         await update.message.reply_text(
-            "🚫 Sorry, I only accept <b>YouTube</b> links.\n"
-            "Please send a valid YouTube video, short, or playlist URL.",
+            "🚫 <b>That doesn't look like a YouTube link.</b>\n\n"
+            "Please send a valid YouTube URL. Examples:\n"
+            "  • <code>https://youtu.be/dQw4w9WgXcQ</code>\n"
+            "  • <code>https://youtube.com/playlist?list=...</code>\n\n"
+            "Type /help for a full list of supported formats.",
             parse_mode="HTML",
         )
         return
 
     playlist = is_playlist_url(text)
-    kind = "playlist" if playlist else "video"
+    kind = "playlist 📂" if playlist else "video 🎬"
     status_msg = await update.message.reply_text(
-        f"⏳ Received a YouTube <b>{kind}</b> link. Starting download…",
+        f"⏳ Received a YouTube <b>{kind}</b> link.\n"
+        f"🔄 Preparing download…",
         parse_mode="HTML",
     )
 
@@ -303,28 +338,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
             if "private" in msg:
-                friendly = "🔒 This video is private and cannot be downloaded."
+                friendly = "🔒 This video is <b>private</b> and cannot be downloaded."
             elif "unavailable" in msg or "removed" in msg:
-                friendly = "❌ This video is unavailable or has been removed."
+                friendly = "❌ This video is <b>unavailable</b> or has been removed."
             elif "geo" in msg or "country" in msg:
-                friendly = "🌍 This video is geo-restricted in your region."
+                friendly = "🌍 This video is <b>geo-restricted</b> in your region."
             elif "sign in" in msg or "bot" in msg:
                 friendly = (
-                    "⚠️ YouTube is requesting sign-in verification. "
-                    "Please ensure a valid cookies.txt is configured."
+                    "⚠️ YouTube is requesting <b>sign-in verification</b>.\n"
+                    "Please ensure a valid <code>cookies.txt</code> is "
+                    "configured on the server."
+                )
+            elif "requested format" in msg or "format" in msg:
+                friendly = (
+                    "⚠️ The requested audio format is <b>not available</b> "
+                    "for this video. This may be a region or rights restriction."
                 )
             else:
-                friendly = f"⚠️ Download error: {exc}"
+                friendly = f"⚠️ <b>Download error:</b>\n<code>{exc}</code>"
             await _edit_progress(status_msg, friendly)
             return
 
         if not tracks:
-            await _edit_progress(status_msg, "⚠️ No tracks were downloaded.")
+            await _edit_progress(
+                status_msg,
+                "⚠️ No tracks were downloaded. The video may be unavailable "
+                "or restricted.",
+            )
             return
 
         await _edit_progress(
             status_msg,
-            f"✅ Downloaded <b>{len(tracks)}</b> track(s). Starting upload…",
+            f"✅ Downloaded <b>{len(tracks)}</b> track(s).\n"
+            f"⬆️ Starting upload to Google Drive…",
         )
 
         # ------------------------------------------------------------------
@@ -340,7 +386,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             title=t["title"],
                         )
             await _edit_progress(
-                status_msg, "✅ Done! Files sent directly (Google Drive not configured)."
+                status_msg,
+                f"✅ Done! <b>{len(tracks)}</b> file(s) sent directly.\n"
+                f"💡 <i>Configure Google Drive for cloud uploads.</i>",
             )
             return
 
@@ -365,7 +413,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await _edit_progress(
             status_msg,
-            f"✅ All done! <b>{len(tracks)}</b> track(s) uploaded to Google Drive.",
+            f"🎉 <b>All done!</b>\n\n"
+            f"📁 <b>{len(tracks)}</b> track(s) uploaded to Google Drive.\n"
+            + (f"📂 Playlist folder: <b>{playlist_name}</b>" if playlist_name else ""),
         )
 
     finally:
@@ -384,6 +434,7 @@ def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("Bot started. Listening for messages…")

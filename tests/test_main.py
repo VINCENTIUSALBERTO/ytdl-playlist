@@ -1,7 +1,7 @@
 """Unit tests for main.py – URL validation & filename sanitization."""
 
 import pytest
-from main import is_youtube_url, is_playlist_url, sanitize_filename
+from main import is_youtube_url, is_playlist_url, sanitize_filename, _ydl_opts
 
 
 # -----------------------------------------------------------------------
@@ -101,3 +101,23 @@ class TestSanitizeFilename:
     def test_preserves_basic_punctuation(self):
         result = sanitize_filename("Rock & Roll, Baby!")
         assert "Rock & Roll, Baby!" == result
+
+
+# -----------------------------------------------------------------------
+# yt-dlp options
+# -----------------------------------------------------------------------
+class TestYdlOpts:
+    def test_format_has_fallback_chain(self):
+        """Format string should try multiple audio formats before falling back."""
+        opts = _ydl_opts("/tmp/test")
+        assert "bestaudio" in opts["format"]
+        assert "best" in opts["format"]
+
+    def test_retries_configured(self):
+        opts = _ydl_opts("/tmp/test")
+        assert opts["retries"] == 3
+        assert opts["fragment_retries"] == 3
+
+    def test_ignoreerrors_enabled(self):
+        opts = _ydl_opts("/tmp/test")
+        assert opts["ignoreerrors"] is True
