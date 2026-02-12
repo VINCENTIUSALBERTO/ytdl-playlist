@@ -309,9 +309,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     playlist = is_playlist_url(text)
-    kind = "playlist 📂" if playlist else "video 🎬"
+    kind = "playlist" if playlist else "video"
+    icon = "📂" if playlist else "🎬"
     status_msg = await update.message.reply_text(
-        f"⏳ Received a YouTube <b>{kind}</b> link.\n"
+        f"⏳ Received a YouTube <b>{kind}</b> {icon} link.\n"
         f"🔄 Preparing download…",
         parse_mode="HTML",
     )
@@ -411,12 +412,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             upload_file(service, t["filepath"], target_folder)
 
-        await _edit_progress(
-            status_msg,
+        done_text = (
             f"🎉 <b>All done!</b>\n\n"
-            f"📁 <b>{len(tracks)}</b> track(s) uploaded to Google Drive.\n"
-            + (f"📂 Playlist folder: <b>{playlist_name}</b>" if playlist_name else ""),
+            f"📁 <b>{len(tracks)}</b> track(s) uploaded to Google Drive."
         )
+        if playlist_name:
+            done_text += f"\n📂 Playlist folder: <b>{playlist_name}</b>"
+        await _edit_progress(status_msg, done_text)
 
     finally:
         # Clean up temporary files.
